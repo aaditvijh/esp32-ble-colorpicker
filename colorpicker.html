@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 Color Picker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 2rem 1rem; min-height: 100vh; }
+  h1 { font-size: 1.4rem; margin-bottom: 1.5rem; }
+  #status { font-size: 0.9rem; color: #aaa; margin-bottom: 1.5rem; }
+  #connectBtn { background: #1D9E75; color: white; border: none; padding: 0.8rem 2rem; border-radius: 8px; font-size: 1rem; cursor: pointer; margin-bottom: 2rem; }
+  #connectBtn:disabled { background: #444; cursor: not-allowed; }
+  #colorPreview { width: 150px; height: 150px; border-radius: 50%; background: #ff0000; margin-bottom: 2rem; border: 3px solid #333; }
+  .slider-group { width: 100%; max-width: 320px; margin-bottom: 1rem; }
+  .slider-group label { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 4px; }
+  input[type=range] { width: 100%; height: 6px; border-radius: 3px; outline: none; cursor: pointer; }
+  #rSlider { accent-color: #ff4444; }
+  #gSlider { accent-color: #44ff44; }
+  #bSlider { accent-color: #4444ff; }
+  #hexDisplay { font-size: 1.2rem; font-weight: bold; margin-top: 1rem; color: #fff; letter-spacing: 2px; }
+  #colorPicker { width: 100%; max-width: 320px; height: 50px; border: none; border-radius: 8px; cursor: pointer; margin-top: 1rem; background: none; }
+</style>
+</head>
+<body>
+  <h1>ESP32 Color Picker 🎨</h1>
+  <p id="status">Not connected</p>
+  <button id="connectBtn">Connect via BLE</button>
+  <div id="colorPreview"></div>
+  <div class="slider-group">
+    <label><span>Red</span><span id="rVal">255</span></label>
+    <input type="range" id="rSlider" min="0" max="255" value="255">
+  </div>
+  <div class="slider-group">
+    <label><span>Green</span><span id="gVal">0</span></label>
+    <input type="range" id="gSlider" min="0" max="255" value="0">
+  </div>
+  <div class="slider-group">
+    <label><span>Blue</span><span id="bVal">0</span></label>
+    <input type="range" id="bSlider" min="0" max="255" value="0">
+  </div>
+  <p id="hexDisplay">#FF0000</p>
+  <input type="color" id="colorPicker" value="#ff0000" title="Pick a color">
+
+<script>
+  const SERVICE_UUID        = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+  const CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
+  let characteristic = null;
+
+  const status      = document.getElementById('status');
+  const connectBtn  = document.getElementById('connectBtn');
+  const preview     = document.getElementById('colorPreview');
+  const rSlider     = document.getElementById('rSlider');
+  const gSlider     = document.getElementById('gSlider');
+  const bSlider     = document.getElementById('bSlider');
+  const rVal        = document.getElementById('rVal');
+  const gVal        = document.getElementById('gVal');
+  const bVal        = document.getElementById('bVal');
+  const hexDisplay  = document.getElementById('hexDisplay');
+  const colorPicker = document.getElementById('colorPicker');
+
+  function toHex(n) { return n.toString(16).padStart(2, '0').toUpperCase(); }
+
+  function updateColor(r, g, b) {
+    rSlider.value = r; gSlider.value = g; bSlider.value = b;
+    rVal.textContent = r; gVal.textContent = g; bVal.textContent = b;
+    const hex = toHex(r) + toHex(g) + toHex(b);
+    hexDisplay.textContent = '#' + hex;
+    preview.style.background = '#' + hex;
+    colorPicker.value = '#' + hex.toLowerCase();
+    sendColor(hex);
+  }
+
+  async function sendColor(hex) {
+    if (!characteristic) return;
+    try {
+      const encoder = new TextEncoder();
+      await characteristic.writeValue(encoder.encode(hex));
+    } catch(e) { console.error(e); }
+  }
+
+  connectBtn.addEventListener('click', async () => {
+    try {
+      status.textContent = 'Scanning...';
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: 'ESP32-ColorPicker' }],
+        optionalServices: [SERVICE_UUID]
+      });
+      status.textContent = 'Connecting...';
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      status.textContent = '🟢 Connected to ' + device.name;
+      connectBtn.disabled = true;
+      device.addEventListener('gattserverdisconnected', () => {
+        status.textContent = '🔴 Disconnected';
+        connectBtn.disabled = false;
+        characteristic = null;
+      });
+    } catch(e) {
+      status.textContent = '❌ ' + e.message;
+    }
+  });
+
+  rSlider.addEventListener('input', () => updateColor(+rSlider.value, +gSlider.value, +bSlider.value));
+  gSlider.addEventListener('input', () => updateColor(+rSlider.value, +gSlider.value, +bSlider.value));
+  bSlider.addEventListener('input', () => updateColor(+rSlider.value, +gSlider.value, +bSlider.value));
+  colorPicker.addEventListener('input', () => {
+    const hex = colorPicker.value.slice(1);
+    const r = parseInt(hex.slice(0,2),16);
+    const g = parseInt(hex.slice(2,4),16);
+    const b = parseInt(hex.slice(4,6),16);
+    updateColor(r, g, b);
+  });
+</script>
+</body>
+</html>
